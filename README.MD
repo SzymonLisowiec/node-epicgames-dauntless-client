@@ -30,7 +30,11 @@ const launcher = new Launcher({
   const dauntless = await launcher.runGame(Dauntless);
   
   console.log(`Your account id: ${dauntless.account.id}`);
-  console.log(`Your character id: ${dauntless.account.character.id}`);
+  if (dauntless.account.character) {
+    console.log(`Your character id: ${dauntless.account.character.id}`);
+  } else {
+    console.log('You don\'t have characters.');
+  }
 
   const webstore = await dauntless.getProductsForTag('webstore');
 

@@ -38,7 +38,7 @@ class Account {
     this.characters = [];
     this.balance = {
       CURRENCY_CELLDUST: 0,
-      CURRENCY_PLATINUM: 12900,
+      CURRENCY_PLATINUM: 0,
     };
   }
 
@@ -69,7 +69,7 @@ class Account {
       ENDPOINT.ACCOUNT_CHARACTER,
       `${this.app.session.tokenType} ${this.app.session.accessToken}`,
     );
-
+    
     data.forEach((character) => {
       this.characters.push(new Character(this, character));
     });

@@ -17,10 +17,11 @@ class App extends Application {
     this.id = 'Archon';
 
     this.config = {
-      ...this.config,
+      useLoginQueue: true,
       build: '++dauntless+rel-0.8.0-CL-131970',
       engineBuild: null,
       netCL: null,
+      ...this.config,
     };
         
     this.http = new Http(this.config.http);
@@ -29,16 +30,9 @@ class App extends Application {
     this.auth = null;
     this.session = null;
     this.account = null;
-    this.character = null;
 
     this.features = null;
 
-    this.launcher.on('exit', this.onExit.bind(this));
-
-  }
-
-  async onExit() {
-    
   }
 
   setLanguage(language) {
@@ -58,12 +52,55 @@ class App extends Application {
       this.launcher.debug.print('Dauntless: Checking if account is linked to EpicGames account...');
       const accountIsLinked = await this.isAccountLinked();
 
-      if (!accountIsLinked) {
-        // TODO: link account
+      if (this.config.useLoginQueue) await this.loginQueue();
+
+      this.launcher.debug.print('Dauntless: Making account\'s session...');
+      const { data: sessionData } = await this.http.send(
+        'PUT',
+        `${ENDPOINT.GAMESESSION}/epic`,
+        `${this.auth.tokenType} ${this.auth.accessToken}`,
+      );
+
+      if (sessionData.message !== 'OK' || !sessionData.payload) {
+        // TODO
+        return false;
       }
 
-      this.launcher.debug.print('Dauntless: Logining to game\'s service...');
-      await this.gameServiceLogin();
+      this.session = {
+        id: sessionData.payload.sessionid,
+        tokenType: 'BEARER',
+        accessToken: sessionData.payload.sessiontoken,
+      };
+
+      this.launcher.debug.print('Dauntless: Fetching account\'s informations...');
+      const { data: accountData } = await this.http.sendGet(
+        ENDPOINT.ACCOUNT_INFO,
+        `${this.session.tokenType} ${this.session.accessToken}`,
+      );
+
+      this.account = new Account(this, accountData);
+      
+      this.launcher.debug.print('Dauntless: Fetching account\'s tags...');
+      await this.account.fetchTags();
+
+      this.launcher.debug.print('Dauntless: Fetching account\'s characters...');
+      await this.account.fetchCharacters();
+      
+      if (this.account.characters.length) {
+
+        await this.http.sendPost(
+          `${ENDPOINT.ACCOUNT_CHARACTER}/name`,
+          `${this.session.tokenType} ${this.session.accessToken}`,
+          {
+            characterId: this.account.character.id,
+            name: '', // idk, I will try change name later
+          },
+        );
+        
+        this.launcher.debug.print('Dauntless: Fetching account\'s inventory...');
+        await this.account.character.fetchInventory();
+
+      }
 
       this.launcher.debug.print('Dauntless: ready');
       return true;
@@ -144,10 +181,14 @@ class App extends Application {
     return false;
   }
 
-  async gameServiceLogin() {
+  async loginQueue(attemptNumber) {
+    
+    if (!attemptNumber) attemptNumber = 0;
+    if (attemptNumber === 0) this.launcher.debug.print('Dauntless: Login queue...');
+    attemptNumber += 1;
 
-    const { data: loginData } = await this.http.sendPost(
-      ENDPOINT.LOGIN,
+    const { data } = await this.http.sendPost(
+      ENDPOINT.LOGIN_QUEUE,
       `${this.auth.tokenType} ${this.auth.accessToken}`,
       {
         email: this.launcher.account.id,
@@ -156,60 +197,31 @@ class App extends Application {
       },
     );
 
-    if (loginData.state !== 'OPEN') {
-      throw new Error(`Cannot fetch login data. Error code: ${loginData.error_code} Message: ${loginData.message || '-'}`);
-      return false;
+    switch (data.state) {
+
+      case 'OPEN':
+        return true;
+
+      case 'QUEUED':
+        this.launcher.debug.print(`Dauntless: Waiting in login queue (${attemptNumber})...`);
+        await new Promise((resolve) => {
+          const sto = setTimeout(() => {
+            clearTimeout(sto);
+            resolve();
+          }, data.timeout);
+        });
+        return this.loginQueue(attemptNumber);
+
+      default:
+        throw new Error(`Unknown login queue state: ${data.state}. Message: ${data.message || '-'}`);
+
     }
 
-    this.launcher.debug.print('Dauntless: Making account\'s session...');
-    const { data: sessionData } = await this.http.send(
-      'PUT',
-      `${ENDPOINT.GAMESESSION}/epic`,
-      `${this.auth.tokenType} ${this.auth.accessToken}`,
-    );
-
-    if (sessionData.message !== 'OK' || !sessionData.payload) {
-      // TODO
-      return false;
-    }
-
-    this.session = {
-      id: sessionData.payload.sessionid,
-      tokenType: 'BEARER',
-      accessToken: sessionData.payload.sessiontoken,
-    };
-
-    this.launcher.debug.print('Dauntless: Fetching account\'s informations...');
-    const { data: accountData } = await this.http.sendGet(
-      ENDPOINT.ACCOUNT_INFO,
-      `${this.session.tokenType} ${this.session.accessToken}`,
-    );
-
-    this.account = new Account(this, accountData);
-    
-    this.launcher.debug.print('Dauntless: Fetching account\'s tags...');
-    await this.account.fetchTags();
-
-    this.launcher.debug.print('Dauntless: Fetching account\'s characters...');
-    await this.account.fetchCharacters();
-
-    await this.http.sendPost(
-      `${ENDPOINT.ACCOUNT_CHARACTER}/name`,
-      `${this.session.tokenType} ${this.session.accessToken}`,
-      {
-        characterId: this.account.character.id,
-        name: '', // idk, I will try change name later
-      }
-    );
-    
-    this.launcher.debug.print('Dauntless: Fetching account\'s inventory...');
-    await this.account.character.fetchInventory();
-    
   }
 
   async fetchFeatures() {
     const { data } = await this.http.sendGet(`${ENDPOINT.FEATURES}/platform/${this.config.platform.short.toLowerCase()}`);
-    if (data.message === 'OK' && data.payload) return data.payload
+    if (data.message === 'OK' && data.payload) return data.payload;
     return null;
   }
 
@@ -234,9 +246,7 @@ class App extends Application {
    * @param {*} tag webstore, dyes or season05_pass
    */
   async getProductsForTag(tag) {
-    const { data } = await this.http.sendGet(
-      `${ENDPOINT.PRODUCT}/skus/public?requiredTags=${tag}`
-    );
+    const { data } = await this.http.sendGet(`${ENDPOINT.PRODUCT}/skus/public?requiredTags=${tag}`);
     return data;
   }
 
