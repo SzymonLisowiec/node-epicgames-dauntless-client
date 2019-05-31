@@ -1,0 +1,35 @@
+{
+	"name": "epicgames-dauntless-client",
+	"version": "0.0.1",
+	"description": "Unofficial Dauntless client in javascript.",
+	"main": "index.js",
+	"keywords": [
+		"epicgames",
+		"dauntless",
+		"client",
+		"api"
+	],
+	"homepage": "https://github.com/SzymonLisowiec/node-epicgames-dauntless-client",
+	"bugs": {
+		"url": "https://github.com/SzymonLisowiec/node-epicgames-dauntless-client/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/SzymonLisowiec/node-epicgames-dauntless-client.git"
+	},
+	"author": {
+		"name": "Szymon Lisowiec",
+		"url": "https://kysune.me"
+	},
+	"license": "MIT",
+	"dependencies": {
+		"epicgames-client": "^2.0.6",
+		"request": "^2.88.0"
+	},
+	"devDependencies": {
+		"eslint": "^5.13.0",
+		"eslint-config-airbnb-base": "^13.1.0",
+		"eslint-plugin-import": "^2.16.0",
+		"epicgames-client": "file:./../node-epicgames-client"
+	}
+}
